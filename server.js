@@ -2,7 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
-const authRoutes = require('./routes/auth');
+//const authRoutes = require('./routes/auth');
 
 dotenv.config();
 
@@ -25,7 +25,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/safemeet_
 .catch((err) => console.error('❌ MongoDB connection error:', err));
 
 // Routes
-app.use('/api', authRoutes);
+//app.use('/api', authRoutes);
 
 const notificationRoutes = require('./routes/notificationRoutes');
 app.use('/api', notificationRoutes);
