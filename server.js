@@ -8,10 +8,10 @@ dotenv.config();
 
 const app = express();
 
-// 🔁 ADDED: In-memory store for OTPs
+// 🔁 In-memory store for OTPs
 const otpStore = {}; // { "phoneNumber": "123456" }
 
-// Initialize Firebase Admin SDK
+// 🔐 Firebase Admin SDK Initialization
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
 
 if (Object.keys(serviceAccount).length > 0) {
@@ -24,7 +24,7 @@ if (Object.keys(serviceAccount).length > 0) {
   console.warn('⚠️ Firebase Service Account not configured - notification features will be disabled');
 }
 
-// Middleware
+// 🌐 Middleware
 app.use(cors({
   origin: process.env.CORS_ORIGIN || '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
@@ -32,7 +32,12 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Database connection
+// 🏠 Root route for Railway
+app.get('/', (req, res) => {
+  res.send('✅ SafeMeet backend is live on Railway!');
+});
+
+// ⚙️ Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/safemeet_db', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
@@ -40,7 +45,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/safemeet_
 .then(() => console.log('✅ Connected to MongoDB'))
 .catch((err) => console.error('❌ MongoDB connection error:', err));
 
-// Define User schema for storing FCM tokens
+// 📦 Mongoose schema for storing user FCM tokens
 const userSchema = new mongoose.Schema({
   userId: { type: String, required: true, unique: true },
   fcmToken: { type: String },
@@ -51,7 +56,7 @@ const userSchema = new mongoose.Schema({
 const UserToken = mongoose.model('UserToken', userSchema);
 
 ////////////////////////////////////////////////////////////
-// 🔁 ADDED: OTP Routes
+// 🔐 OTP Routes
 ////////////////////////////////////////////////////////////
 
 app.post('/api/send-otp', async (req, res) => {
@@ -69,11 +74,10 @@ app.post('/api/send-otp', async (req, res) => {
 
   console.log(`[OTP GENERATED] ${phoneNumber} → ${otp}`);
 
-  // In real apps, you'd send this OTP via SMS
   res.status(200).json({
     success: true,
     message: 'OTP sent successfully',
-    otp // 🔁 Only for testing. Remove in production!
+    otp // 🧪 Only for testing – remove in production
   });
 });
 
@@ -90,7 +94,7 @@ app.post('/api/verify-otp', async (req, res) => {
   const storedOtp = otpStore[phoneNumber];
   if (storedOtp === otp) {
     console.log(`[OTP VERIFIED] ${phoneNumber}`);
-    delete otpStore[phoneNumber]; // Remove after verification
+    delete otpStore[phoneNumber]; // Clean up
 
     return res.status(200).json({
       success: true,
@@ -105,7 +109,7 @@ app.post('/api/verify-otp', async (req, res) => {
 });
 
 ////////////////////////////////////////////////////////////
-// ✅ Existing Notification APIs
+// 📲 FCM Token Register & Notification Routes
 ////////////////////////////////////////////////////////////
 
 app.post('/api/register-token', async (req, res) => {
@@ -125,13 +129,13 @@ app.post('/api/register-token', async (req, res) => {
       { upsert: true, new: true }
     );
 
-    console.log(`Registered token for user ${userId}`);
+    console.log(`✅ Registered FCM token for user: ${userId}`);
     res.status(200).json({
       success: true,
       message: 'Token registered successfully'
     });
   } catch (error) {
-    console.error('Error registering token:', error);
+    console.error('❌ Error registering token:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to register token',
@@ -154,7 +158,7 @@ app.post('/api/send-notification', async (req, res) => {
     if (!userId || !title || !body) {
       return res.status(400).json({
         success: false,
-        message: 'User ID, title and body are required'
+        message: 'User ID, title, and body are required'
       });
     }
 
@@ -173,7 +177,7 @@ app.post('/api/send-notification', async (req, res) => {
     };
 
     const response = await admin.messaging().send(message);
-    console.log(`Notification sent to ${userId}:`, response);
+    console.log(`📤 Notification sent to ${userId}:`, response);
 
     res.status(200).json({
       success: true,
@@ -181,7 +185,7 @@ app.post('/api/send-notification', async (req, res) => {
       messageId: response
     });
   } catch (error) {
-    console.error('Error sending notification:', error);
+    console.error('❌ Error sending notification:', error);
 
     if (error.code === 'messaging/invalid-registration-token' ||
         error.code === 'messaging/registration-token-not-registered') {
@@ -189,7 +193,7 @@ app.post('/api/send-notification', async (req, res) => {
         { userId: req.body.userId },
         { $unset: { fcmToken: 1 } }
       );
-      console.log(`Removed invalid token for user ${req.body.userId}`);
+      console.log(`🗑️ Removed invalid token for user ${req.body.userId}`);
     }
 
     res.status(500).json({
@@ -201,7 +205,10 @@ app.post('/api/send-notification', async (req, res) => {
   }
 });
 
-// Health check
+////////////////////////////////////////////////////////////
+// 🧪 Health Check Endpoint
+////////////////////////////////////////////////////////////
+
 app.get('/api/health', (req, res) => {
   const status = {
     status: 'OK',
@@ -215,7 +222,10 @@ app.get('/api/health', (req, res) => {
   res.status(200).json(status);
 });
 
-// Global error handler
+////////////////////////////////////////////////////////////
+// 🛠️ Global Error Handler
+////////////////////////////////////////////////////////////
+
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({
@@ -224,6 +234,10 @@ app.use((err, req, res, next) => {
     error: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
 });
+
+////////////////////////////////////////////////////////////
+// 🚀 Start the Server
+////////////////////////////////////////////////////////////
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
