@@ -27,8 +27,8 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/safemeet_
 // Routes
 //app.use('/api', authRoutes);
 
-const notificationRoutes = require('./routes/notificationRoutes');
-app.use('/api', notificationRoutes);
+//const notificationRoutes = require('./routes/notificationRoutes');
+//app.use('/api', notificationRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
