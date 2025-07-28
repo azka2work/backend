@@ -32,7 +32,7 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// 🏠 Root route for Railway
+// ✅ Root route for Railway
 app.get('/', (req, res) => {
   res.send('✅ SafeMeet backend is live on Railway!');
 });
