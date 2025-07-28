@@ -16,6 +16,13 @@ app.use(cors({
 }));
 app.use(express.json());
 
+
+// Root route (for Railway home page)
+app.get('/', (req, res) => {
+  res.send('✅ SafeMeet backend is live on Railway!');
+});
+
+
 // Database connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/safemeet_db', {
   useNewUrlParser: true,
