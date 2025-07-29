@@ -59,27 +59,40 @@ const UserToken = mongoose.model('UserToken', userSchema);
 // 🔐 OTP Routes
 ////////////////////////////////////////////////////////////
 
-app.post('/api/send-otp', async (req, res) => {
-  const { phoneNumber } = req.body;
+app.post('/send-otp', async (req, res) => {
+  const { email } = req.body;
 
-  if (!phoneNumber) {
-    return res.status(400).json({
-      success: false,
-      message: 'Phone number is required'
-    });
+  if (!email) {
+    return res.status(400).json({ success: false, message: 'Email is required' });
   }
 
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  otpStore[phoneNumber] = otp;
+  const otp = generateOtp(); // use your existing function
 
-  console.log(`[OTP GENERATED] ${phoneNumber} → ${otp}`);
+  try {
+    // Save OTP to database (optional)
+    await User.findOneAndUpdate(
+      { email },
+      { otp },
+      { upsert: true, new: true }
+    );
 
-  res.status(200).json({
-    success: true,
-    message: 'OTP sent successfully',
-    otp // 🧪 Only for testing – remove in production
-  });
+    // Send email using nodemailer
+    const mailOptions = {
+      from: 'your@email.com',
+      to: email,
+      subject: 'Your OTP Code',
+      text: `Your OTP code is: ${otp}`,
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    res.status(200).json({ success: true, message: 'OTP sent successfully' });
+  } catch (error) {
+    console.error('[OTP ERROR]', error);
+    res.status(500).json({ success: false, message: 'Error sending OTP' });
+  }
 });
+
 
 app.post('/api/verify-otp', async (req, res) => {
   const { phoneNumber, otp } = req.body;
@@ -235,9 +248,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-////////////////////////////////////////////////////////////
-// 🚀 Start the Server
-////////////////////////////////////////////////////////////
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
