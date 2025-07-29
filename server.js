@@ -8,7 +8,7 @@ const nodemailer = require('nodemailer');
 dotenv.config();
 const app = express();
 
-// 🌐 Middleware
+// ✅ Middleware
 app.use(cors({
   origin: process.env.CORS_ORIGIN || '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
@@ -39,6 +39,9 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/safemeet_
 // ✅ Mongoose Schema
 const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
+  fullName: { type: String },
+  phone: { type: String },
+  password: { type: String },
   otp: { type: String },
   fcmToken: { type: String },
   createdAt: { type: Date, default: Date.now },
@@ -50,8 +53,8 @@ const User = mongoose.model('User', userSchema);
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: process.env.EMAIL_USER,         // Your Gmail address
-    pass: process.env.EMAIL_PASS          // App-specific password
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
   }
 });
 
@@ -62,18 +65,22 @@ function generateOtp() {
 
 // ✅ API: Send OTP
 app.post('/api/send-otp', async (req, res) => {
-  const { email } = req.body;
-  if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
+  const { email, fullName, phone, password } = req.body;
+  if (!email || !password) return res.status(400).json({ success: false, message: 'Missing fields' });
 
   const otp = generateOtp();
 
   try {
-    await User.findOneAndUpdate({ email }, { otp }, { upsert: true, new: true });
+    await User.findOneAndUpdate(
+      { email },
+      { fullName, phone, password, otp },
+      { upsert: true, new: true }
+    );
 
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: email,
-      subject: 'Your OTP Code',
+      subject: 'Your SafeMeet OTP Code',
       text: `Your OTP is: ${otp}`
     };
 
@@ -161,7 +168,12 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ✅ Server
+// ✅ Default Fallback Route
+app.get('/', (req, res) => {
+  res.send('🚀 SafeMeet Backend is live.');
+});
+
+// ✅ Server Listen
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 SafeMeet Backend running at http://localhost:${PORT}`);
