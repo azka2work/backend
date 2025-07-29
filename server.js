@@ -3,26 +3,10 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const admin = require('firebase-admin');
+const nodemailer = require('nodemailer');
 
 dotenv.config();
-
 const app = express();
-
-// 🔁 In-memory store for OTPs
-const otpStore = {}; // { "phoneNumber": "123456" }
-
-// 🔐 Firebase Admin SDK Initialization
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
-
-if (Object.keys(serviceAccount).length > 0) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    databaseURL: process.env.FIREBASE_DATABASE_URL
-  });
-  console.log('✅ Firebase Admin SDK initialized');
-} else {
-  console.warn('⚠️ Firebase Service Account not configured - notification features will be disabled');
-}
 
 // 🌐 Middleware
 app.use(cors({
@@ -32,155 +16,124 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// ✅ Root route for Railway
-app.get('/', (req, res) => {
-  res.send('✅ SafeMeet backend is live on Railway!');
-});
+// ✅ Firebase Admin SDK
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+if (Object.keys(serviceAccount).length > 0) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    databaseURL: process.env.FIREBASE_DATABASE_URL
+  });
+  console.log('✅ Firebase initialized');
+} else {
+  console.warn('⚠️ Firebase credentials missing');
+}
 
-// ⚙️ Connect to MongoDB
+// ✅ MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/safemeet_db', {
   useNewUrlParser: true,
-  useUnifiedTopology: true,
+  useUnifiedTopology: true
 })
-.then(() => console.log('✅ Connected to MongoDB'))
-.catch((err) => console.error('❌ MongoDB connection error:', err));
+.then(() => console.log('✅ MongoDB connected'))
+.catch((err) => console.error('❌ MongoDB error:', err));
 
-// 📦 Mongoose schema for storing user FCM tokens
+// ✅ Mongoose Schema
 const userSchema = new mongoose.Schema({
-  userId: { type: String, required: true, unique: true },
+  email: { type: String, required: true, unique: true },
+  otp: { type: String },
   fcmToken: { type: String },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
+const User = mongoose.model('User', userSchema);
 
-const UserToken = mongoose.model('UserToken', userSchema);
-
-////////////////////////////////////////////////////////////
-// 🔐 OTP Routes
-////////////////////////////////////////////////////////////
-
-app.post('/send-otp', async (req, res) => {
-  const { email } = req.body;
-
-  if (!email) {
-    return res.status(400).json({ success: false, message: 'Email is required' });
+// ✅ Nodemailer setup
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,         // Your Gmail address
+    pass: process.env.EMAIL_PASS          // App-specific password
   }
+});
 
-  const otp = generateOtp(); // use your existing function
+// ✅ Helper: OTP Generator
+function generateOtp() {
+  return Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
+}
+
+// ✅ API: Send OTP
+app.post('/api/send-otp', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
+
+  const otp = generateOtp();
 
   try {
-    // Save OTP to database (optional)
-    await User.findOneAndUpdate(
-      { email },
-      { otp },
-      { upsert: true, new: true }
-    );
+    await User.findOneAndUpdate({ email }, { otp }, { upsert: true, new: true });
 
-    // Send email using nodemailer
     const mailOptions = {
-      from: 'your@email.com',
+      from: process.env.EMAIL_USER,
       to: email,
       subject: 'Your OTP Code',
-      text: `Your OTP code is: ${otp}`,
+      text: `Your OTP is: ${otp}`
     };
 
     await transporter.sendMail(mailOptions);
+    console.log(`[OTP SENT] ${email}: ${otp}`);
 
-    res.status(200).json({ success: true, message: 'OTP sent successfully' });
+    return res.status(200).json({ success: true, message: 'OTP sent successfully' });
   } catch (error) {
-    console.error('[OTP ERROR]', error);
-    res.status(500).json({ success: false, message: 'Error sending OTP' });
+    console.error('[SEND OTP ERROR]', error);
+    return res.status(500).json({ success: false, message: 'Error sending OTP' });
   }
 });
 
-
+// ✅ API: Verify OTP
 app.post('/api/verify-otp', async (req, res) => {
-  const { phoneNumber, otp } = req.body;
+  const { email, otp } = req.body;
+  if (!email || !otp) return res.status(400).json({ success: false, message: 'Email and OTP are required' });
 
-  if (!phoneNumber || !otp) {
-    return res.status(400).json({
-      success: false,
-      message: 'Phone number and OTP are required'
-    });
-  }
-
-  const storedOtp = otpStore[phoneNumber];
-  if (storedOtp === otp) {
-    console.log(`[OTP VERIFIED] ${phoneNumber}`);
-    delete otpStore[phoneNumber]; // Clean up
-
-    return res.status(200).json({
-      success: true,
-      message: 'OTP verified successfully'
-    });
-  } else {
-    return res.status(401).json({
-      success: false,
-      message: 'Invalid or expired OTP'
-    });
-  }
-});
-
-////////////////////////////////////////////////////////////
-// 📲 FCM Token Register & Notification Routes
-////////////////////////////////////////////////////////////
-
-app.post('/api/register-token', async (req, res) => {
   try {
-    const { userId, token } = req.body;
+    const user = await User.findOne({ email });
+    if (user && user.otp === otp) {
+      user.otp = null;
+      await user.save();
 
-    if (!userId || !token) {
-      return res.status(400).json({
-        success: false,
-        message: 'User ID and token are required'
-      });
+      console.log(`[OTP VERIFIED] ${email}`);
+      return res.status(200).json({ success: true, message: 'OTP verified' });
+    } else {
+      return res.status(401).json({ success: false, message: 'Invalid OTP' });
     }
-
-    await UserToken.findOneAndUpdate(
-      { userId },
-      { fcmToken: token, updatedAt: Date.now() },
-      { upsert: true, new: true }
-    );
-
-    console.log(`✅ Registered FCM token for user: ${userId}`);
-    res.status(200).json({
-      success: true,
-      message: 'Token registered successfully'
-    });
   } catch (error) {
-    console.error('❌ Error registering token:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to register token',
-      error: error.message
-    });
+    return res.status(500).json({ success: false, message: 'Error verifying OTP' });
   }
 });
 
-app.post('/api/send-notification', async (req, res) => {
-  if (!admin.apps.length) {
-    return res.status(503).json({
-      success: false,
-      message: 'Firebase not configured - notification service unavailable'
-    });
-  }
+// ✅ API: Register FCM Token
+app.post('/api/register-token', async (req, res) => {
+  const { email, token } = req.body;
+  if (!email || !token) return res.status(400).json({ success: false, message: 'Email and token are required' });
 
   try {
-    const { userId, title, body, data } = req.body;
+    await User.findOneAndUpdate({ email }, { fcmToken: token, updatedAt: Date.now() }, { upsert: true });
+    console.log(`[FCM REGISTERED] ${email}`);
+    return res.status(200).json({ success: true, message: 'Token registered' });
+  } catch (error) {
+    console.error('[FCM REG ERROR]', error);
+    return res.status(500).json({ success: false, message: 'Token registration failed' });
+  }
+});
 
-    if (!userId || !title || !body) {
-      return res.status(400).json({
-        success: false,
-        message: 'User ID, title, and body are required'
-      });
-    }
+// ✅ API: Send Notification
+app.post('/api/send-notification', async (req, res) => {
+  const { email, title, body, data } = req.body;
+  if (!email || !title || !body) return res.status(400).json({ success: false, message: 'Required fields missing' });
 
-    const user = await UserToken.findOne({ userId });
+  if (!admin.apps.length) return res.status(503).json({ success: false, message: 'Firebase not configured' });
+
+  try {
+    const user = await User.findOne({ email });
     if (!user || !user.fcmToken) {
-      return res.status(404).json({
-        success: false,
-        message: 'User token not found'
-      });
+      return res.status(404).json({ success: false, message: 'User or token not found' });
     }
 
     const message = {
@@ -190,70 +143,28 @@ app.post('/api/send-notification', async (req, res) => {
     };
 
     const response = await admin.messaging().send(message);
-    console.log(`📤 Notification sent to ${userId}:`, response);
-
-    res.status(200).json({
-      success: true,
-      message: 'Notification sent successfully',
-      messageId: response
-    });
+    console.log(`[NOTIFICATION SENT] ${email}`);
+    return res.status(200).json({ success: true, message: 'Notification sent', messageId: response });
   } catch (error) {
-    console.error('❌ Error sending notification:', error);
-
-    if (error.code === 'messaging/invalid-registration-token' ||
-        error.code === 'messaging/registration-token-not-registered') {
-      await UserToken.findOneAndUpdate(
-        { userId: req.body.userId },
-        { $unset: { fcmToken: 1 } }
-      );
-      console.log(`🗑️ Removed invalid token for user ${req.body.userId}`);
-    }
-
-    res.status(500).json({
-      success: false,
-      message: 'Failed to send notification',
-      error: error.message,
-      code: error.code
-    });
+    console.error('[NOTIFY ERROR]', error);
+    return res.status(500).json({ success: false, message: 'Notification failed', error: error.message });
   }
 });
 
-////////////////////////////////////////////////////////////
-// 🧪 Health Check Endpoint
-////////////////////////////////////////////////////////////
-
+// ✅ API: Health Check
 app.get('/api/health', (req, res) => {
-  const status = {
+  res.status(200).json({
     status: 'OK',
-    message: 'Server is running',
-    services: {
-      database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
-      firebase: admin.apps.length > 0 ? 'Available' : 'Unavailable'
-    },
-    timestamp: new Date()
-  };
-  res.status(200).json(status);
-});
-
-////////////////////////////////////////////////////////////
-// 🛠️ Global Error Handler
-////////////////////////////////////////////////////////////
-
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({
-    success: false,
-    message: 'Internal server error',
-    error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
+    firebase: admin.apps.length > 0 ? 'Available' : 'Unavailable',
+    time: new Date()
   });
 });
 
-
+// ✅ Server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running and accessible at:`);
-  console.log(`   → http://localhost:${PORT}`);
-  console.log(`   → http://<your-PC-IP>:${PORT} (for mobile access)`);
+  console.log(`🚀 SafeMeet Backend running at http://localhost:${PORT}`);
 });
 
 module.exports = app;
