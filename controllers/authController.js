@@ -5,6 +5,7 @@ const bcrypt = require('bcrypt');
 
 // ✅ SEND OTP (EMAIL ONLY VERSION)
 exports.sendOtp = async (req, res) => {
+console.log('[DEBUG] 🔍 Incoming /send-otp body:', req.body);
   const email = req.body.email?.trim();
   const fcmToken = req.body.fcmToken;
 
