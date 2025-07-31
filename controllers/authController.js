@@ -3,9 +3,10 @@ const sendOtpEmail = require('../utils/sendOtp');
 const sendFcmNotification = require('../utils/sendFcm');
 const bcrypt = require('bcrypt');
 
-// ✅ SEND OTP (EMAIL ONLY VERSION)
+// ✅ SEND OTP
 exports.sendOtp = async (req, res) => {
-console.log('[DEBUG] 🔍 Incoming /send-otp body:', req.body);
+  console.log('[DEBUG] 🔍 Incoming /send-otp body:', req.body);
+
   const email = req.body.email?.trim();
   const fcmToken = req.body.fcmToken;
 
@@ -15,6 +16,7 @@ console.log('[DEBUG] 🔍 Incoming /send-otp body:', req.body);
 
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   console.log(`[DEBUG] /send-otp for ${email}, OTP: ${otp}`);
+  console.log(`[DEBUG] FCM Token: ${fcmToken}`);
 
   try {
     let user = await User.findOne({ email });
@@ -27,12 +29,11 @@ console.log('[DEBUG] 🔍 Incoming /send-otp body:', req.body);
     }
 
     await user.save();
-    console.log('[DEBUG] Saved user, now sending OTP email');
+    console.log('[DEBUG] ✅ User saved. Sending OTP email...');
 
     await sendOtpEmail(email, otp);
-    console.log('[DEBUG] Email sent');
+    console.log('[DEBUG] ✅ Email sent');
 
-    // ✅ Optional push notification (for debugging)
     if (user.fcmToken) {
       await sendFcmNotification(
         user.fcmToken,
@@ -48,12 +49,10 @@ console.log('[DEBUG] 🔍 Incoming /send-otp body:', req.body);
   }
 };
 
-
-
 // ✅ VERIFY OTP
 exports.verifyOtp = async (req, res) => {
   const { email, otp } = req.body;
-  console.log('[VERIFY OTP]', req.body);
+  console.log('[DEBUG] 🛂 Verifying OTP:', req.body);
 
   try {
     const user = await User.findOne({ email, otp });
@@ -75,6 +74,7 @@ exports.verifyOtp = async (req, res) => {
 // ✅ SIGNUP
 exports.signup = async (req, res) => {
   const { fullName, email, password, phone, fcmToken } = req.body;
+  console.log('[DEBUG] 📝 Signup Data:', req.body);
 
   try {
     const user = await User.findOne({ email, otpVerified: true });
@@ -92,7 +92,6 @@ exports.signup = async (req, res) => {
 
     await user.save();
 
-    // ✅ Send welcome push notification
     if (user.fcmToken) {
       await sendFcmNotification(
         user.fcmToken,
@@ -111,6 +110,7 @@ exports.signup = async (req, res) => {
 // ✅ LOGIN
 exports.login = async (req, res) => {
   const { email, password, fcmToken } = req.body;
+  console.log('[DEBUG] 🔐 Login request:', req.body);
 
   try {
     const user = await User.findOne({ email });
@@ -128,7 +128,6 @@ exports.login = async (req, res) => {
       return res.json({ success: false, message: 'OTP not verified' });
     }
 
-    // ✅ Optionally refresh FCM token on login
     if (fcmToken) {
       user.fcmToken = fcmToken;
       await user.save();
@@ -140,9 +139,11 @@ exports.login = async (req, res) => {
     res.status(500).json({ success: false, message: 'Error during login' });
   }
 };
-// ✅ Send Push Notification to Another User (App-to-App)
+
+// ✅ Send Push Notification
 exports.sendNotification = async (req, res) => {
   const { recipientEmail, title, message } = req.body;
+  console.log('[DEBUG] 📢 Sending push to:', recipientEmail);
 
   try {
     const recipient = await User.findOne({ email: recipientEmail });
